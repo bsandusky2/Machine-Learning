@@ -1,0 +1,86 @@
+---
+title: "FitBit Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(tidyverse)
+library(DataExplorer)
+library(rpart)
+library(rpart.plot)
+```
+
+## Introduction
+Wearable devices have been used to collect data and quantiy the amount of activity people do. However, these fitness devices
+have not quantified how well people complete particular activities. Accelerometers were placed on the belt, forearms, arms, and
+dumbells of the participants in the study. The participants were asked to complete unilateral bicep curls correctly and incorrectly 
+(were asked to make some of the common mistakes using a light dumbbell). 
+
+```{r Load Data}
+train <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+test<- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+```
+
+## Data Cleaning and Feature Selection
+The data contained 160 variables, and it is important to select th most important features to use for prediction. First, variables
+with many missing values were excluded. The threshold for removing variables with missing values was set at 20%. The first seven features were also removed due to not corresponding to measurements from the accelerometers. The full dataset was randomly partitiioned into a training dataset and test dataset (60%/40% respectively). Next, features in the training dataset were assessed
+for low variance, and this features were removed from both the training and test sets. Features were also assessed for high correlation (.75) in the training data, and those features were also removed from both datasets. Utlizing this process left both datsets with thirty-three features which were used to fit a decision tree and random forest models. 
+
+```{r Clean Data}
+#Removed columns with more than 20% missing values
+train.df<-  train[ lapply( train, function(x) sum(is.na(x)) / length(x) ) < 0.2 ]
+#Make sure no missing values left, otherwise impute them
+sum(is.na(train.df))/length(train.df)
+#Remove first 7 variables
+train.df<-train.df[,-c(1:7)]
+# Split data into training and test sets
+inTrain<- createDataPartition(train.df$classe, p = .6, list = FALSE)
+train.df<- train.df[inTrain,]
+test.df<- train.df[-inTrain,]
+
+#Find variables with near 0 variance and remove them
+NZeroVar<- nearZeroVar(train.df)
+train.df <- train.df[,-NZeroVar]
+test.df <- test.df[,-NZeroVar]
+
+#Find highly correlated features
+correlationMatrix <- cor(train.df[,1:52])
+# find attributes that are highly corrected (ideally >0.75) and remove them
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.75)
+train.df<- train.df[,-highlyCorrelated]
+test.df<- test.df[,-highlyCorrelated]
+```
+## Model Development
+A decision tree and random forest were developed in this analysis. The models were developed on the training dataset, and then this model was used to make a prediction on the test set. Models were assessed for accuracy (% of coreectly predicted observations) by using a confusion matrix. 
+
+# Decision Tree Results
+The decision tree only resulted in an accuracy of about 53%, which means the out of bag error rate was approaximately
+47%.
+```{r Fit Decision Tree}
+#Fitting only a decision tree  --- only 53% Accuracy
+treefit<- train(classe ~ . , method = "rpart", trControl = trainControl(method = "cv"),  data = train.df)
+tree.predict<- predict(treefit,test.df)
+conf.mat.dtree<- confusionMatrix(tree.predict,test.df$classe)
+conf.mat.dtree
+```
+
+# Random Forest Results
+The random forest results in a 100% accuracy, with a 0% out of bag error rate. This model will be used on the test set to 
+predict 20 observations. 
+```{r Random Forest}
+# Fitting a random forest -- 100% Accuracy
+control<- trainControl(method = "cv", number = 10)
+rf.fit<- train(classe ~ . , method = "rf", trainControl = control,  data = train.df)
+rf.predict<- predict(rf.fit,test.df)
+conf.mat.rf<- confusionMatrix(rf.predict,test.df$classe)
+conf.mat.rf
+```
+
+# Random Forest to predict 20 unknown cases
+```{r Predict on 20 Test Cases}
+# Predict on 20 test cases
+predict.test<- predict(rf.fit,test)
+predict.test
+```
